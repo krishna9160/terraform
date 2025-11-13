@@ -1,0 +1,467 @@
+
+🌍 Terraform
+
+Definition:
+Terraform is an Infrastructure as Code (IaC) tool used to automate infrastructure creation and management on any cloud platform.
+
+Infrastructure:- Resources used to run our application.
+
+---
+
+🧠 Basic Information
+
+Used to automate infrastructure setup (like EC2, VPC, S3, etc.)
+
+Manual setup is time-consuming and prone to errors — Terraform solves this.
+
+Written in Go language
+
+Uses HCL (HashiCorp Configuration Language)
+
+Free & Open-Source
+
+Platform Independent (works on any OS)
+
+Released in 2014
+
+Invented by: Mitchell Hashimoto
+
+Owned by: HashiCorp Company
+
+Terraform can also be called a IaC (Infrastructure as Code) tool.
+
+
+
+---
+
+⚙️ Why Terraform
+
+Before Terraform, every cloud had its own automation tool:
+
+AWS → CloudFormation
+
+Azure → ARM Templates
+
+GCP → Deployment Manager
+
+
+Terraform unified this — one tool for all cloud platforms (AWS, Azure, GCP, etc.)
+
+
+---
+
+🌟 Advantages
+
+Reusable: Same code can be used across environments
+
+Time-Saving: Deploy entire infra in seconds
+
+Automation: Reduces manual work
+
+Avoids Mistakes: Consistent and repeatable deployments
+
+Dry Run (Plan): Preview changes before applying
+
+Multi-Cloud: Supports multiple providers
+
+Version Controlled: Works with Git for collaboration
+
+
+
+---
+
+🧩 Summary
+
+> Terraform automates infrastructure creation using code, saving time, avoiding manual errors, and supporting multiple cloud providers — all from a single tool.
+
+---
+🏗️ Terraform Architecture & Workflow
+
+🧠 Main Components
+
+1. Configuration Files (.tf)
+
+Written in HCL (HashiCorp Configuration Language)
+
+Define your infrastructure (VPCs, EC2s, S3, etc.)
+
+Example:
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+}
+
+2. Provider
+
+Plugin that connects Terraform to the actual platform (AWS, Azure, etc.)
+
+Example:
+
+provider "aws" {
+  region = "us-east-1"
+}
+
+3. Resources
+
+Real cloud components (EC2, S3, VPC, etc.) created by Terraform.
+
+Defined inside configuration files.
+
+4. State File (terraform.tfstate)
+
+Keeps track of your created resources.
+
+Acts as a “map” of what’s deployed.
+
+If deleted → Terraform won’t know existing infra.
+
+5. Terraform Core
+
+The main engine that reads configuration, interacts with providers, and manages state.
+
+---
+
+⚙️ Terraform Workflow
+
+1. Write – Create .tf files with resources.
+
+2. Init – Run terraform init
+
+Downloads provider plugins (like AWS).
+
+3. Plan – Run terraform plan
+
+Shows what Terraform will create or change (dry run).
+
+4. Apply – Run terraform apply
+
+Actually creates the infrastructure.
+
+5. Destroy – Run terraform destroy
+
+Deletes everything defined in the .tf files.
+
+---
+
+🧩 Flow Diagram (Text View)
+
+Write Code (.tf)
+      ↓
+terraform init
+      ↓
+terraform plan
+      ↓
+terraform apply
+      ↓
+Infrastructure Created
+      ↓
+terraform destroy (optional)
+---
+📘 Summary
+
+> Terraform follows a simple flow — write, plan, apply — using configuration files and providers. It keeps track of your infra with the state file and can deploy or destroy entire environments automatically.
+
+--_----------------------------
+
+🔹 1. BASIC WORKFLOW COMMANDS
+
+1️⃣ terraform init
+
+Purpose:
+Initializes your Terraform working directory.
+
+What it does:
+
+Downloads provider plugins (e.g., AWS, Azure).
+
+Prepares the backend (state storage).
+
+Sets up the environment for Terraform commands.
+
+
+Example:
+
+terraform init
+
+✅ Run this once in every new project before plan/apply.
+
+
+---
+
+2️⃣ terraform validate
+
+Purpose:
+Checks your .tf files for syntax errors.
+
+Example:
+
+terraform validate
+
+✅ Helps ensure your configuration is valid before planning.
+
+
+---
+
+3️⃣ terraform plan
+
+Purpose:
+Shows a preview of what Terraform will create, change, or destroy.
+
+Example:
+
+terraform plan
+
+✅ Think of this as a dry run — no real changes yet.
+
+To save the plan:
+
+terraform plan -out=plan.tfplan
+
+
+---
+
+4️⃣ terraform apply
+
+Purpose:
+Actually applies the configuration and creates or updates infrastructure.
+
+Example:
+
+terraform apply
+
+Or apply from a saved plan:
+
+terraform apply plan.tfplan
+
+✅ This command creates all resources defined in .tf files.
+
+
+---
+
+5️⃣ terraform destroy
+
+Purpose:
+Deletes everything that Terraform created.
+
+Example:
+
+terraform destroy
+
+✅ Use this to clean up your AWS account or test environments.
+
+
+---
+
+6️⃣ terraform show
+
+Purpose:
+Displays details about your current infrastructure and state.
+
+Example:
+
+terraform show
+
+
+---
+
+7️⃣ terraform output
+
+Purpose:
+Displays all output values defined in your configuration (from outputs.tf).
+
+Example:
+
+terraform output
+
+To see a specific output:
+
+terraform output ec2_public_ip
+
+
+---
+
+🔹 2. STATE MANAGEMENT COMMANDS
+
+Terraform tracks all resources in a state file (terraform.tfstate).
+Here are commands to manage it:
+
+1️⃣ terraform state list
+
+Lists all resources tracked in the state file.
+
+terraform state list
+
+2️⃣ terraform state show <resource>
+
+Shows details about a specific resource from the state.
+
+terraform state show aws_instance.myec2
+
+3️⃣ terraform state rm <resource>
+
+Removes a resource from state file (without deleting in cloud).
+
+terraform state rm aws_instance.myec2
+
+4️⃣ terraform state mv <source> <destination>
+
+Moves resources between modules or renames them in state.
+
+terraform state mv aws_instance.old aws_instance.new
+
+
+---
+
+🔹 3. WORKSPACE COMMANDS
+
+Workspaces let you manage multiple environments (like dev, test, prod)
+with the same Terraform configuration.
+
+1️⃣ terraform workspace list
+
+Lists all available workspaces.
+
+2️⃣ terraform workspace new <name>
+
+Creates a new workspace.
+
+terraform workspace new dev
+
+3️⃣ terraform workspace select <name>
+
+Switches to another workspace.
+
+terraform workspace select prod
+
+4️⃣ terraform workspace show
+
+Displays the current workspace.
+
+
+---
+
+🔹 4. FORMATTING AND TIDY-UP COMMANDS
+
+1️⃣ terraform fmt
+
+Formats all .tf files to a consistent style.
+
+terraform fmt
+
+2️⃣ terraform fmt -recursive
+
+Formats all Terraform files in subfolders too.
+
+
+---
+
+🔹 5. LOCKING AND VERSION CHECK COMMANDS
+
+1️⃣ terraform version
+
+Shows the current Terraform version.
+
+terraform version
+
+2️⃣ terraform providers
+
+Shows all providers used in your configuration.
+
+terraform providers
+
+3️⃣ terraform providers lock
+
+Locks provider versions to avoid mismatches.
+
+
+---
+
+🔹 6. IMPORTING EXISTING RESOURCES
+
+terraform import
+
+Brings existing cloud resources under Terraform management.
+
+Example:
+
+terraform import aws_instance.example i-0abcd1234
+
+✅ This does not create resources — it adds them to your state file.
+
+
+---
+
+🔹 7. GRAPH AND DEBUG COMMANDS
+
+1️⃣ terraform graph
+
+Generates a visual graph of dependencies (can be opened using Graphviz).
+
+terraform graph > graph.dot
+
+2️⃣ terraform refresh
+
+Updates the state file to match the real infrastructure.
+
+terraform refresh
+
+3️⃣ terraform apply -auto-approve
+
+Applies changes without asking for confirmation.
+
+terraform apply -auto-approve
+
+4️⃣ terraform destroy -auto-approve
+
+Destroys everything without confirmation.
+
+
+---
+
+🔹 8. CLEANUP COMMANDS
+
+terraform init -reconfigure
+
+Reinitialize backend or provider setup.
+
+terraform init -upgrade
+
+Upgrades provider versions.
+
+Delete local cache (manual):
+
+rm -rf .terraform/
+
+
+---
+
+🧠 Common Real-Time Command Flow
+
+terraform init
+terraform fmt
+terraform validate
+terraform plan
+terraform apply
+terraform output
+terraform destroy
+
+
+---
+
+🏁 Summary
+
+Terraform Command Categories:
+
+Category	Commands
+
+Setup & Execution:- 	init, validate, plan, apply, destroy, show, output
+State Management	:-state list, state show, state rm, state mv
+Workspaces:-	workspace list, new, select, show
+Formatting :-	fmt, fmt -recursive
+Providers & Versioning	:-version, providers, providers lock
+Importing:- 	import
+Debugging & Graphing :-	graph, refresh, apply/destroy -auto-approve
+
+-----------
+
