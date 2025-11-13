@@ -1,0 +1,659 @@
+
+⚙️ Terraform Provisioners, Data Sources & Meta-Arguments
+
+⚡ 1. Terraform Provisioners
+
+🌍 Definition:
+
+Provisioners are used to execute scripts or commands on a resource after it’s created.
+
+They help in configuring servers — for example:
+
+Installing software packages
+
+Updating system settings
+
+Running shell or Ansible scripts
+
+
+
+---
+
+🧩 Types of Provisioners
+
+Type	Description
+
+local-exec	Runs a command on your local machine (where Terraform is running)
+remote-exec	Runs a command inside the created resource (like EC2 via SSH)
+file	Uploads files from local machine to remote server
+
+
+
+---
+
+🧱 Example 1 — Local Exec Provisioner
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+
+  provisioner "local-exec" {
+    command = "echo EC2 instance created successfully!"
+  }
+}
+
+✅ Runs this command on your local system after instance creation.
+
+
+---
+
+🧱 Example 2 — Remote Exec Provisioner
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+  key_name      = "mykey"
+
+  connection {
+    type        = "ssh"
+    user        = "ec2-user"
+    private_key = file("mykey.pem")
+    host        = self.public_ip
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo yum update -y",
+      "sudo yum install nginx -y",
+      "sudo systemctl start nginx"
+    ]
+  }
+}
+
+✅ Runs commands directly inside the EC2 instance after it’s created.
+
+
+---
+
+🧱 Example 3 — File Provisioner
+
+provisioner "file" {
+  source      = "index.html"
+  destination = "/var/www/html/index.html"
+}
+
+✅ Copies local file → EC2 instance.
+
+
+---
+
+⚠️ Important:
+
+Provisioners should be used only when absolutely necessary —
+Terraform prefers infrastructure creation, not configuration.
+For configuration, tools like Ansible are better.
+
+
+---
+
+🔍 2. Terraform Data Sources
+
+
+---
+
+🌍 Definition:
+
+Data Sources let you fetch existing information from the cloud provider —
+instead of creating new resources.
+
+Useful when you need details like:
+
+Existing VPC ID
+
+Existing AMI ID
+
+Existing Security Group name
+
+
+
+---
+
+🧱 Example 1 — Fetch Latest Amazon Linux AMI
+
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+
+resource "aws_instance" "example" {
+  ami           = data.aws_ami.amazon_linux.id
+  instance_type = "t2.micro"
+}
+
+✅ This ensures Terraform always picks the latest Amazon Linux AMI.
+
+
+---
+
+🧱 Example 2 — Fetch Existing VPC
+
+data "aws_vpc" "default" {
+  default = true
+}
+
+output "vpc_id" {
+  value = data.aws_vpc.default.id
+}
+
+✅ Pulls information about the default VPC instead of creating a new one.
+
+
+---
+
+🌟 Advantages of Data Sources
+
+Benefit	Description
+
+Dynamic	Always fetches latest data
+Reusability	Can be shared between modules
+Automation	Avoids hardcoding IDs
+Integration	Connects with existing infrastructure
+
+
+
+---
+
+🧩 3. Terraform Meta-Arguments
+
+
+---
+
+Meta-arguments control how Terraform handles resources —
+looping, dependency, conditional creation, etc.
+
+
+---
+
+🔗 (a) depends_on
+
+Defines explicit dependency between resources.
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+  depends_on    = [aws_vpc.main]
+}
+
+✅ Ensures the EC2 instance is created after the VPC.
+
+
+---
+
+🔁 (b) count
+
+Used to create multiple instances of the same resource.
+
+resource "aws_instance" "web" {
+  count         = 3
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+}
+
+✅ Creates 3 EC2 instances (web[0], web[1], web[2]).
+
+
+---
+
+🔄 (c) for_each
+
+Used for looping through maps or sets (more advanced than count).
+
+variable "subnets" {
+  type = map(string)
+  default = {
+    subnet1 = "10.0.1.0/24"
+    subnet2 = "10.0.2.0/24"
+  }
+}
+
+resource "aws_subnet" "example" {
+  for_each   = var.subnets
+  vpc_id     = aws_vpc.main.id
+  cidr_block = each.value
+  tags = {
+    Name = each.key
+  }
+}
+
+✅ Creates two subnets dynamically with unique tags.
+
+
+---
+
+⚙️ (d) lifecycle
+
+Controls how Terraform handles resource changes.
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+✅ Prevents accidental deletion of important resources.
+
+
+---
+
+🧩 Common Lifecycle Arguments
+
+Argument	Description
+
+create_before_destroy	Creates a new resource before destroying the old one
+prevent_destroy	Prevents resource deletion
+ignore_changes	Ignores specified attributes from being updated
+
+
+
+---
+
+🔧 (e) dynamic
+
+Used to generate nested blocks dynamically (for variable structures).
+
+variable "ingress_rules" {
+  default = [
+    { from_port = 22, to_port = 22, protocol = "tcp" },
+    { from_port = 80, to_port = 80, protocol = "tcp" }
+  ]
+}
+
+resource "aws_security_group" "example" {
+  name = "demo-sg"
+
+  dynamic "ingress" {
+    for_each = var.ingress_rules
+    content {
+      from_port   = ingress.value.from_port
+      to_port     = ingress.value.to_port
+      protocol    = ingress.value.protocol
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+}
+
+✅ Automatically generates ingress rules from variable input.
+
+
+---
+
+🧠 Summary Table
+
+Concept	Purpose	Example Use
+
+Provisioners	Run commands/scripts after resource creation	Install nginx on EC2
+Data Sources	Fetch existing infra info	Get latest AMI ID
+depends_on	Define resource order	EC2 depends on VPC
+count / for_each	Create multiple resources dynamically	Multiple subnets or instances
+lifecycle	Protect or control resource updates	Prevent destroy
+dynamic	Generate nested blocks dynamically	Create SG rules from list
+
+
+
+---
+
+🚀 Real Example Flow:
+
+1. Create a VPC (with for_each for multiple subnets).
+
+
+2. Launch EC2 using latest AMI from data source.
+
+
+3. Add provisioner to install Nginx automatically.
+
+
+4. Use lifecycle to prevent EC2 deletion accidentally.
+
+
+5. Reuse module for multiple environments.
+
+-------------------------
+
+🌿 Terraform Variables, Outputs, Locals & Expressions
+
+
+---
+
+🎯 Why Variables?
+
+Without variables, Terraform files become hardcoded and repetitive.
+
+Variables help make your code dynamic, reusable, and maintainable —
+you can change values without editing your main code.
+
+
+---
+
+🧩 1. Variables in Terraform
+
+
+---
+
+🔹 Syntax
+
+You declare variables using the variable block.
+
+variable "instance_type" {
+  description = "EC2 instance type"
+  type        = string
+  default     = "t2.micro"
+}
+
+Then, you reference it like this:
+
+instance_type = var.instance_type
+
+
+---
+
+🔹 Variable Types
+
+Type	Example	Notes
+
+string	"t2.micro"	Text values
+number	8080	Numeric values
+bool	true / false	Boolean values
+list	["t2.micro", "t2.small"]	Ordered collection
+map	{ env = "dev", region = "ap-south-1" }	Key-value pairs
+object	object({name=string, size=number})	Custom structure
+tuple	[ "dev", 1, true ]	Mixed-type list
+
+
+
+---
+
+🧱 Example 1 — Simple Variable
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+  default     = "ap-south-1"
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+
+---
+
+🧱 Example 2 — List Variable
+
+variable "availability_zones" {
+  type = list(string)
+  default = ["ap-south-1a", "ap-south-1b"]
+}
+
+resource "aws_subnet" "example" {
+  count             = length(var.availability_zones)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index)
+  availability_zone = var.availability_zones[count.index]
+}
+
+✅ Dynamically creates subnets in each AZ.
+
+
+---
+
+🧱 Example 3 — Map Variable
+
+variable "env_tags" {
+  type = map(string)
+  default = {
+    env     = "dev"
+    project = "terraform-demo"
+  }
+}
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+
+  tags = var.env_tags
+}
+
+✅ Automatically applies consistent tags to all resources.
+
+
+---
+
+📘 2. Variable Input Methods
+
+You can set variable values in several ways (priority order):
+
+Priority	Method	Example
+
+1️⃣	CLI flag	terraform apply -var="instance_type=t2.small"
+2️⃣	tfvars file	terraform.tfvars or dev.tfvars
+3️⃣	Environment variable	export TF_VAR_instance_type=t2.micro
+4️⃣	Default value	Inside the variable block
+
+
+
+---
+
+🧱 Example — terraform.tfvars
+
+aws_region     = "us-east-1"
+instance_type  = "t3.micro"
+env            = "dev"
+
+Terraform automatically picks this file if named terraform.tfvars.
+
+
+---
+
+🧠 3. Locals (Local Variables)
+
+
+---
+
+🌍 Definition:
+
+locals are temporary variables used inside the same configuration —
+useful for simplifying expressions or avoiding repetition.
+
+
+---
+
+🧱 Example
+
+locals {
+  common_tags = {
+    environment = "dev"
+    owner       = "Vamsi"
+  }
+
+  app_name = "demo-app"
+}
+
+resource "aws_instance" "app" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+  tags = merge(local.common_tags, {
+    Name = local.app_name
+  })
+}
+
+✅ Cleaner, DRY code — you define once, reuse everywhere.
+
+
+---
+
+📤 4. Outputs
+
+
+---
+
+🌍 Definition:
+
+Outputs display important resource details after terraform apply.
+They help you retrieve values like public IPs, URLs, etc.
+
+
+---
+
+🧱 Example
+
+output "instance_ip" {
+  description = "Public IP of EC2"
+  value       = aws_instance.example.public_ip
+}
+
+✅ After terraform apply, Terraform will show:
+
+Outputs:
+instance_ip = "3.111.145.92"
+
+
+---
+
+🧱 Output with Sensitive Value
+
+output "db_password" {
+  value     = var.db_password
+  sensitive = true
+}
+
+✅ Hides the value from terminal output (for security).
+
+
+---
+
+🔣 5. Terraform Expressions
+
+
+---
+
+Expressions let you combine variables, functions, and logic.
+
+
+---
+
+🧱 Interpolation
+
+You can refer to variables or resource attributes using ${} syntax:
+
+ami = "${data.aws_ami.amazon_linux.id}"
+
+✅ In modern Terraform, ${} is optional — can just write:
+
+ami = data.aws_ami.amazon_linux.id
+
+
+---
+
+🧠 Arithmetic & Logical Expressions
+
+count = var.env == "prod" ? 3 : 1
+
+✅ If environment is prod → 3 instances, else 1.
+
+
+---
+
+🧩 String Interpolation
+
+tags = {
+  Name = "web-${var.env}"
+}
+
+✅ Generates dynamic tag names (e.g., web-dev).
+
+
+---
+
+🧮 6. Terraform Built-in Functions
+
+Function	Example	Description
+
+length()	length(var.subnets)	Returns number of elements
+upper() / lower()	upper(var.env)	Changes case
+merge()	merge(map1, map2)	Combine maps
+join()	join(",", var.list)	Joins list into string
+lookup()	lookup(var.map, "key", "default")	Safe map access
+cidrsubnet()	cidrsubnet("10.0.0.0/16", 8, 1)	Derive subnet from CIDR
+file()	file("key.pem")	Reads file content
+format()	format("Instance-%s", var.env)	String formatting
+toset(), tomap(), tolist()	Convert between data types	
+
+
+
+---
+
+🔐 7. Sensitive Variables
+
+If you want to hide sensitive info (like passwords):
+
+variable "db_password" {
+  type      = string
+  sensitive = true
+}
+
+✅ Terraform will mask it in outputs and CLI logs.
+
+
+---
+
+🧩 Summary Table
+
+Concept	Purpose	Example
+
+variable	Input value from user/config	region = var.aws_region
+locals	Internal reusable variables	local.common_tags
+output	Display values after apply	output “instance_ip”
+expressions	Combine values dynamically	“web-${var.env}”
+functions	Built-in helpers for logic	length(), merge(), lookup()
+
+
+
+---
+
+💡 Real Example Putting All Together
+
+variable "env" {
+  default = "dev"
+}
+
+variable "instance_type" {
+  default = "t2.micro"
+}
+
+locals {
+  tags = {
+    environment = var.env
+    owner       = "Vamsi"
+  }
+}
+
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.amazon_linux.id
+  instance_type = var.instance_type
+  tags          = local.tags
+}
+
+output "instance_ip" {
+  value = aws_instance.web.public_ip
+}
+
+✅ Clean, dynamic, and reusable Terraform configuration!
