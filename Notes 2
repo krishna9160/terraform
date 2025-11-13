@@ -1,0 +1,563 @@
+
+
+🌱 Terraform Lifecycle, Variables & Versions
+
+
+---
+
+⚙️ 1. Terraform Resource Lifecycle
+
+Terraform lifecycle settings define how resources are created, updated, or destroyed.
+You use the lifecycle block inside a resource.
+
+
+---
+
+🧩 Example:
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+
+  lifecycle {
+    create_before_destroy = true
+    prevent_destroy       = true
+    ignore_changes        = [tags]
+  }
+}
+
+
+---
+
+🔹 Lifecycle Arguments
+
+Argument	Description
+
+create_before_destroy	Creates a new resource before deleting the old one (avoids downtime).
+prevent_destroy	Prevents accidental deletion — Terraform will throw an error if you try to destroy it.
+ignore_changes	Ignores certain attributes during updates (e.g., tags, security groups).
+
+
+
+---
+
+🧠 Example Use Case
+
+When you want zero downtime while replacing an instance → use create_before_destroy.
+
+When you want to protect critical infra → use prevent_destroy.
+
+
+
+---
+
+🧮 2. Variables in Terraform
+
+Variables make Terraform configurations dynamic and reusable.
+They are declared with the variable block.
+
+
+---
+
+🔹 Types of Variables
+
+Type	Description	Example
+
+Input Variables	User-defined values passed into Terraform.	Declared using variable block.
+Output Variables	Values returned after deployment.	Declared using output block.
+Local Variables	Temporary internal variables within a file.	Declared using locals block.
+
+
+
+---
+
+📘 Input Variables
+
+Syntax:
+
+variable "instance_type" {
+  description = "Type of EC2 instance"
+  type        = string
+  default     = "t2.micro"
+}
+
+Usage in Resource:
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = var.instance_type
+}
+
+
+---
+
+💡 Ways to Pass Variable Values
+
+Method	Command / File	Description
+
+Default value	In variable block	Used if no other value given
+From CLI	-var flag	terraform apply -var="instance_type=t3.micro"
+From file	.tfvars or .auto.tfvars	Example: terraform.tfvars
+From environment	export TF_VAR_instance_type="t2.micro"	For shell-based environments
+
+
+
+---
+
+📘 Example: terraform.tfvars
+
+instance_type = "t3.micro"
+region        = "us-east-1"
+
+Terraform automatically reads this file when applying.
+
+
+---
+
+📘 Output Variables
+
+Syntax:
+
+output "public_ip" {
+  description = "Public IP of EC2 instance"
+  value       = aws_instance.example.public_ip
+}
+
+Usage:
+
+terraform output public_ip
+
+
+---
+
+📘 Local Variables
+
+Used for intermediate calculations or simplifications.
+
+Syntax:
+
+locals {
+  common_tags = {
+    Owner = "Vamsi"
+    Env   = "Dev"
+  }
+}
+
+Usage:
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+  tags          = local.common_tags
+}
+
+
+---
+
+🧩 3. Variable Types
+
+Type	Example	Description
+
+string	"t2.micro"	Text values
+number	3	Numeric values
+bool	true or false	Boolean
+list	["dev", "test", "prod"]	Ordered collection
+map	{region="us-east-1", size="t2.micro"}	Key-value pairs
+object	{ name = "vpc1", cidr = "10.0.0.0/16" }	Complex structures
+any	Can accept any type	Flexible
+
+
+
+---
+
+🧠 Example: Multiple Variable Types
+
+variable "ports" {
+  type = list(number)
+  default = [22, 80, 443]
+}
+
+variable "tags" {
+  type = map(string)
+  default = {
+    Env   = "Dev"
+    Owner = "Vamsi"
+  }
+}
+
+
+---
+
+🧩 4. Terraform Versions & Providers
+
+Terraform uses providers to connect with different platforms (AWS, Azure, GCP, etc.).
+Version constraints help keep environments consistent.
+
+
+---
+
+📘 Provider Version Example
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+
+---
+
+📘 Terraform Version Example
+
+terraform {
+  required_version = ">= 1.5.0"
+}
+
+✅ Ensures your project runs only with compatible Terraform versions.
+
+
+---
+
+🔢 Version Operators
+
+Operator	Meaning	Example
+
+=	Exact version	= 5.0.0
+>=	Greater than or equal to	>= 1.0.0
+<=	Less than or equal to	<= 2.0.0
+~>	Allows updates within minor versions	~> 5.0 → 5.0.x only
+!=	Not equal to version	!= 1.2.0
+
+
+
+---
+
+⚙️ 5. Constants (in Terraform)
+
+Terraform doesn’t have direct “constants,”
+but you can simulate constants using locals — values that don’t change.
+
+Example:
+
+locals {
+  project_name = "DevOpsProject"
+  region       = "us-east-1"
+}
+
+✅ You can’t override these from outside — so they act like constants.
+
+
+---
+
+🧩 Summary
+
+Concept	Description
+
+Lifecycle	Controls creation, update, and destroy behavior
+Variables	Makes infra reusable and dynamic
+Outputs	Displays or exports results
+Locals	Internal constants or calculations
+Version Constraints	Ensures compatibility with Terraform and providers
+
+
+
+---
+
+🚀 Quick Practice Flow
+
+terraform init
+terraform validate
+terraform plan -var="instance_type=t3.micro"
+terraform apply
+terraform output
+terraform destroy
+
+
+---_----------
+
+🧩 Terraform Modules, Backends & Remote State
+
+🧱 1. Terraform Modules
+
+🌍 Definition:
+
+A module in Terraform is a container for multiple resources that work together.
+It allows you to reuse, organize, and simplify your code.
+
+You can think of a module as a function in programming —
+you define it once, and call it many times with different values.
+
+
+---
+
+🗂️ Structure of a Terraform Module
+
+A module usually has:
+
+main.tf
+variables.tf
+outputs.tf
+
+Each module should describe a small logical part of infrastructure (like a VPC, EC2, or S3).
+
+
+---
+
+🧩 Example – Creating a VPC Module
+
+📁 Folder Structure
+
+terraform-project/
+│
+├── main.tf
+├── variables.tf
+├── outputs.tf
+└── modules/
+    └── vpc/
+        ├── main.tf
+        ├── variables.tf
+        └── outputs.tf
+
+
+---
+
+📘 Inside modules/vpc/main.tf
+
+resource "aws_vpc" "main" {
+  cidr_block = var.cidr
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+📘 Inside modules/vpc/variables.tf
+
+variable "cidr" {
+  description = "VPC CIDR block"
+  type        = string
+}
+
+variable "vpc_name" {
+  description = "VPC name tag"
+  type        = string
+}
+
+📘 Inside modules/vpc/outputs.tf
+
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+
+---
+
+🧩 Now call the module from your root main.tf
+
+module "vpc" {
+  source   = "./modules/vpc"
+  cidr     = "10.0.0.0/16"
+  vpc_name = "demo-vpc"
+}
+
+✅ When you run terraform apply, Terraform loads the module and creates the VPC.
+
+
+---
+
+🌟 Advantages of Using Modules
+
+Advantage	Description
+
+Reusability	Write once, use anywhere
+Simplifies Code	Keeps main project clean
+Team Collaboration	Everyone can use same modules
+Consistency	Same infra standards across environments
+Versioning	You can version your modules using Git or Terraform Registry
+
+
+
+---
+
+🧠 Example — Using Terraform Public Module
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "5.1.0"
+
+  name = "my-vpc"
+  cidr = "10.0.0.0/16"
+  azs  = ["us-east-1a", "us-east-1b"]
+  public_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
+  private_subnets = ["10.0.3.0/24", "10.0.4.0/24"]
+}
+
+✅ Terraform downloads it automatically from the Terraform Registry.
+
+
+---
+
+💾 2. Terraform Backends
+
+
+---
+
+🌍 Definition:
+
+A backend in Terraform defines where and how the state file is stored.
+
+By default, Terraform keeps your state file locally (in terraform.tfstate).
+But for team environments, you store it remotely (like in S3, Azure Blob, GCS, etc.).
+
+
+---
+
+📘 Example — Local Backend (default)
+
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+
+
+---
+
+📘 Example — Remote Backend (AWS S3)
+
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state-bucket"
+    key            = "env/dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-lock"
+    encrypt        = true
+  }
+}
+
+
+---
+
+🧠 Explanation:
+
+Parameter	Description
+
+bucket	Name of the S3 bucket storing the state file
+key	Path inside the bucket where the state file is saved
+region	AWS region of the bucket
+dynamodb_table	Optional table for state locking (prevents 2 users editing same state)
+encrypt	Encrypts the state file
+
+
+
+---
+
+🌟 Why Use Remote Backend?
+
+Advantage	Description
+
+Team Collaboration	Everyone uses same remote state
+State Locking	Avoids concurrent modification
+Security	Stored in secure cloud storage
+Backups	S3 versioning keeps old state versions
+Automation	Ideal for CI/CD pipelines
+
+
+
+---
+
+🌐 3. Terraform Remote State
+
+
+---
+
+📘 Definition:
+
+Remote State allows you to share Terraform state data between configurations or teams.
+
+You can output data from one Terraform project and use it in another.
+
+
+---
+
+🧩 Example – Sharing VPC Info Between Projects
+
+Project 1: VPC
+
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+Project 2: EC2
+
+data "terraform_remote_state" "vpc" {
+  backend = "s3"
+  config = {
+    bucket = "my-terraform-state-bucket"
+    key    = "env/dev/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
+resource "aws_instance" "example" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t2.micro"
+  subnet_id     = data.terraform_remote_state.vpc.outputs.vpc_id
+}
+
+✅ Now your EC2 project automatically fetches the vpc_id from the first project.
+
+
+---
+
+⚙️ 4. Terraform Workspaces
+
+Workspaces are used to manage multiple environments (like dev, test, prod) using the same configuration.
+
+
+---
+
+🧩 Example Commands
+
+terraform workspace list        # Show all workspaces
+terraform workspace new dev     # Create a new workspace
+terraform workspace select dev  # Switch to workspace
+terraform workspace show        # Display current workspace
+
+Each workspace has its own state file, so resources don’t conflict.
+
+
+---
+
+🧠 Summary
+
+Concept	Purpose
+
+Modules	Reuse and organize Terraform code
+Backend	Where Terraform stores its state (local or remote)
+Remote State	Share data between different Terraform projects
+Workspaces	Manage multiple environments (dev/test/prod)
+
+
+
+---
+
+🚀 Quick Real-World Flow
+
+1. Create modules for VPC, EC2, and S3.
+
+
+2. Store state file in S3 backend (enable DynamoDB lock).
+
+
+3. Use remote state to connect EC2 with VPC outputs.
+
+
+4. Manage environments using workspaces.
+
+
+5. Use terraform plan and apply to deploy infrastructure.
+-----------------------
+" 
