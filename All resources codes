@@ -1,0 +1,476 @@
+Awesome — one big, practical Terraform project that provisions a complete DevOps-ish environment and launches a simple app.
+I’ll give you a single, ready-to-run Terraform project (split into files) that creates the common resources you use in DevOps practice:
+
+What this will create
+
+VPC, public subnet, IGW, route table
+
+Security groups (SSH, HTTP, app, DB)
+
+EC2 instance (user-data installs Docker and runs a sample app)
+
+Application Load Balancer (ALB) +Target Group + Listener
+
+S3 bucket (for artifacts/state examples)
+
+ECR repository (for container images)
+
+RDS (MySQL) — minimal dev instance (use for app DB)
+
+IAM role + instance profile for EC2 (allows ECR/S3 access)
+
+Outputs: public IP, ALB DNS, S3 name, RDS endpoint, ECR repo URL
+
+
+> ⚠️ Important notes before you run
+
+This creates real AWS resources that may cost money (EC2, RDS, ALB). Use a small region and small instance types (defaults use free/low-tier where possible).
+
+Do not hardcode credentials. Use AWS CLI profile or environment variables.
+
+Replace var.key_name with a key pair that exists in your chosen region (so you can SSH).
+
+This is a practice / dev setup — not production. Security settings are simplified for learning.
+
+
+
+
+
+---
+
+Folder structure
+
+devops-demo/
+├── provider.tf
+├── variables.tf
+├── main.tf
+├── outputs.tf
+└── terraform.tfvars  (you create this locally with your values)
+
+
+---
+
+provider.tf
+
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+
+---
+
+variables.tf
+
+variable "aws_region" {
+  description = "AWS region to create resources in"
+  type        = string
+  default     = "ap-south-1"
+}
+
+variable "key_name" {
+  description = "Existing EC2 key pair name in the region (for SSH)"
+  type        = string
+}
+
+variable "vpc_cidr" {
+  type    = string
+  default = "10.0.0.0/16"
+}
+
+variable "public_subnet_cidr" {
+  type    = string
+  default = "10.0.1.0/24"
+}
+
+variable "instance_type" {
+  type    = string
+  default = "t3.micro"
+}
+
+variable "app_port" {
+  type    = number
+  default = 8080
+}
+
+variable "db_username" {
+  type    = string
+  default = "tfuser"
+}
+
+variable "db_password" {
+  type    = string
+  description = "DB password (use a secure secret in real projects)"
+  type    = string
+  default = "TfDemoPass123!"
+}
+
+variable "bucket_name" {
+  description = "S3 bucket name (must be globally unique)"
+  type        = string
+  default     = ""
+}
+
+> Create a terraform.tfvars locally to set key_name and bucket_name (and you can override region), e.g.:
+
+
+
+key_name = "my-ec2-key"
+bucket_name = "vamsi-devops-demo-2025-11-11"
+aws_region = "ap-south-1"
+
+
+---
+
+main.tf
+
+# --- Networking: VPC, subnet, IGW, route table
+resource "aws_vpc" "main" {
+  cidr_block = var.vpc_cidr
+  tags = { Name = "devops-demo-vpc" }
+}
+
+resource "aws_subnet" "public" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.public_subnet_cidr
+  map_public_ip_on_launch = true
+  tags = { Name = "devops-demo-public-subnet" }
+}
+
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+  tags = { Name = "devops-demo-igw" }
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+  tags = { Name = "devops-demo-public-rt" }
+}
+
+resource "aws_route_table_association" "a" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+# --- Security groups
+resource "aws_security_group" "bastion_sg" {
+  name   = "devops-bastion-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    description = "SSH from my IP"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # for learning only; restrict to your IP in real env
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = { Name = "bastion-sg" }
+}
+
+resource "aws_security_group" "app_sg" {
+  name   = "devops-app-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP from ALB"
+    from_port   = var.app_port
+    to_port     = var.app_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH (optional)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = { Name = "app-sg" }
+}
+
+resource "aws_security_group" "db_sg" {
+  name   = "devops-db-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    description = "MySQL from app"
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    security_groups = [aws_security_group.app_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = { Name = "db-sg" }
+}
+
+# --- IAM role for EC2 to access ECR/S3/CloudWatch (basic)
+data "aws_iam_policy_document" "ec2_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ec2_role" {
+  name               = "devops-demo-ec2-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ecr" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_s3" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "devops-demo-ec2-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+# --- ECR repository
+resource "aws_ecr_repository" "app" {
+  name = "devops-demo-app"
+  image_tag_mutability = "MUTABLE"
+  tags = { Name = "devops-demo-ecr" }
+}
+
+# --- S3 bucket (optional: make unique with timestamp if default not set)
+resource "aws_s3_bucket" "artifacts" {
+  bucket = length(var.bucket_name) > 0 ? var.bucket_name : "${replace(lower("devops-demo-${random_id.bucket_id.hex}"), "/[^a-z0-9-]/", "-")}"
+  acl    = "private"
+  tags = { Name = "devops-demo-artifacts" }
+}
+
+resource "random_id" "bucket_id" {
+  byte_length = 4
+}
+
+# --- RDS (MySQL) minimal dev DB (not for prod)
+resource "aws_db_subnet_group" "default" {
+  name       = "devops-demo-db-subnet"
+  subnet_ids = [aws_subnet.public.id]
+  tags = { Name = "devops-db-subnet" }
+}
+
+resource "aws_db_instance" "mysql" {
+  allocated_storage    = 20
+  engine               = "mysql"
+  engine_version       = "8.0"
+  instance_class       = "db.t3.micro"
+  name                 = "devopsdb"
+  username             = var.db_username
+  password             = var.db_password
+  skip_final_snapshot  = true
+  publicly_accessible  = true
+  vpc_security_group_ids = [aws_security_group.db_sg.id]
+  db_subnet_group_name = aws_db_subnet_group.default.name
+  tags = { Name = "devops-demo-mysql" }
+}
+
+# --- EC2 instance for app (user_data will install docker and run nginx demo)
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["137112412989"] # Amazon Linux 2 AMI owner id (may vary by region)
+  filter {
+    name = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+
+resource "aws_instance" "app" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
+  key_name               = var.key_name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+
+  user_data = <<-EOF
+              #!/bin/bash
+              yum update -y
+              amazon-linux-extras install docker -y || yum install -y docker
+              service docker start
+              usermod -a -G docker ec2-user
+              docker run -d -p ${var.app_port}:80 --name devops-nginx nginx:latest
+              EOF
+
+  tags = { Name = "devops-demo-app-instance" }
+}
+
+# --- ALB to expose the app
+resource "aws_lb" "alb" {
+  name               = "devops-demo-alb"
+  internal           = false
+  load_balancer_type = "application"
+  subnets            = [aws_subnet.public.id]
+  security_groups    = [aws_security_group.app_sg.id]
+  tags = { Name = "devops-demo-alb" }
+}
+
+resource "aws_lb_target_group" "tg" {
+  name     = "devops-demo-tg"
+  port     = var.app_port
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+  health_check {
+    path                = "/"
+    interval            = 30
+    unhealthy_threshold = 2
+    healthy_threshold   = 2
+    matcher             = "200-399"
+  }
+}
+
+resource "aws_lb_target_group_attachment" "att" {
+  target_group_arn = aws_lb_target_group.tg.arn
+  target_id        = aws_instance.app.id
+  port             = var.app_port
+}
+
+resource "aws_lb_listener" "listener" {
+  load_balancer_arn = aws_lb.alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "forward"
+    target_group_arn = aws_lb_target_group.tg.arn
+  }
+}
+
+
+---
+
+outputs.tf
+
+output "ec2_public_ip" {
+  value = aws_instance.app.public_ip
+}
+
+output "alb_dns" {
+  value = aws_lb.alb.dns_name
+}
+
+output "s3_bucket" {
+  value = aws_s3_bucket.artifacts.bucket
+}
+
+output "rds_endpoint" {
+  value = aws_db_instance.mysql.endpoint
+}
+
+output "ecr_repository_url" {
+  value = aws_ecr_repository.app.repository_url
+}
+
+
+---
+
+How to run (safe steps)
+
+1. cd devops-demo
+
+
+2. Create terraform.tfvars with values:
+
+
+
+key_name = "your-existing-keypair"
+bucket_name = "your-unique-bucket-name-2025-11-11"
+aws_region = "ap-south-1"
+
+3. terraform init
+
+
+4. terraform plan — inspect carefully what will be created and costs
+
+
+5. terraform apply — confirm with yes
+
+
+6. When finished testing: terraform destroy
+
+
+
+
+---
+
+Explanations & learning points
+
+Why IAM Role & Instance Profile? so the EC2 can pull/push to ECR and access S3 without embedding credentials.
+
+ECR created so later you can docker push your app image there. Right now user-data runs nginx from Docker Hub for simplicity.
+
+RDS shows how to provision DB; publicly_accessible = true is set for learning only — in prod you'd use private DB and subnets.
+
+ALB sits in front of the EC2 and routes HTTP traffic to the container port.
+
+S3 demonstrates storing artifacts/logs/backups.
+
+
+
+---
+
+Safety & cleanup
+
+This project creates RDS and ALB which can incur costs. Use terraform destroy when done.
+
+Consider using count or skip variables to turn off expensive resources when you test quickly (I can show how).
+
+
+
+---
+
+If you want, I can:
+
+Produce a smaller zero-cost variant (only VPC + EC2 + S3) for initial practice, or
+
+Add EKS + node group later (that’s more complex), or
+
+Show how to add userdata to pull from ECR (once you push an image), or
+
+Add a null_resource to run docker build and push to ECR via Terraform external/local-exec (demo).
+
+
+Which next step would you like?
