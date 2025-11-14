@@ -279,6 +279,17 @@ resource "aws_ecr_repository" "app" {
 resource "aws_s3_bucket" "artifacts" {
   bucket = length(var.bucket_name) > 0 ? var.bucket_name : "${replace(lower("devops-demo-${random_id.bucket_id.hex}"), "/[^a-z0-9-]/", "-")}"
   acl    = "private"
+  versioning {
+  enabled = true
+}
+
+server_side_encryption_configuration {
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
   tags = { Name = "devops-demo-artifacts" }
 }
 
