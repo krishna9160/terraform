@@ -1,487 +1,1303 @@
-Awesome — one big, practical Terraform project that provisions a complete DevOps-ish environment and launches a simple app.
-I’ll give you a single, ready-to-run Terraform project (split into files) that creates the common resources you use in DevOps practice:
-
-What this will create
-
-VPC, public subnet, IGW, route table
-
-Security groups (SSH, HTTP, app, DB)
-
-EC2 instance (user-data installs Docker and runs a sample app)
-
-Application Load Balancer (ALB) +Target Group + Listener
-
-S3 bucket (for artifacts/state examples)
-
-ECR repository (for container images)
-
-RDS (MySQL) — minimal dev instance (use for app DB)
-
-IAM role + instance profile for EC2 (allows ECR/S3 access)
-
-Outputs: public IP, ALB DNS, S3 name, RDS endpoint, ECR repo URL
-
-
-> ⚠️ Important notes before you run
-
-This creates real AWS resources that may cost money (EC2, RDS, ALB). Use a small region and small instance types (defaults use free/low-tier where possible).
-
-Do not hardcode credentials. Use AWS CLI profile or environment variables.
-
-Replace var.key_name with a key pair that exists in your chosen region (so you can SSH).
-
-This is a practice / dev setup — not production. Security settings are simplified for learning.
-
-
-
-
-
----
-
-Folder structure
-
-devops-demo/
-├── provider.tf
-├── variables.tf
-├── main.tf
-├── outputs.tf
-└── terraform.tfvars  (you create this locally with your values)
-
-
----
-
-provider.tf
-
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
+complete Terraform setup for creating an AWS EC2 with all variables defined in a separate file:-
 
 provider "aws" {
   region = var.aws_region
 }
 
+resource "aws_instance" "ec2" {
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
+  key_name               = var.key_name
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = [var.security_group_id]
 
----
+  tags = {
+    Name        = var.instance_name
+    Environment = var.environment
+  }
+}
 
-variables.tf
+Variables.tf:-
 
 variable "aws_region" {
-  description = "AWS region to create resources in"
-  type        = string
-  default     = "ap-south-1"
-}
-
-variable "key_name" {
-  description = "Existing EC2 key pair name in the region (for SSH)"
+  description = "AWS region for EC2 instance"
   type        = string
 }
 
-variable "vpc_cidr" {
-  type    = string
-  default = "10.0.0.0/16"
-}
-
-variable "public_subnet_cidr" {
-  type    = string
-  default = "10.0.1.0/24"
+variable "ami_id" {
+  description = "AMI ID for EC2 instance"
+  type        = string
 }
 
 variable "instance_type" {
-  type    = string
-  default = "t3.micro"
-}
-
-variable "app_port" {
-  type    = number
-  default = 8080
-}
-
-variable "db_username" {
-  type    = string
-  default = "tfuser"
-}
-
-variable "db_password" {
-  type    = string
-  description = "DB password (use a secure secret in real projects)"
-  type    = string
-  default = "TfDemoPass123!"
-}
-
-variable "bucket_name" {
-  description = "S3 bucket name (must be globally unique)"
+  description = "EC2 instance type"
   type        = string
-  default     = ""
 }
 
-> Create a terraform.tfvars locally to set key_name and bucket_name (and you can override region), e.g.:
+variable "key_name" {
+  description = "Key pair name for SSH access"
+  type        = string
+}
 
+variable "subnet_id" {
+  description = "Subnet ID where EC2 will be launched"
+  type        = string
+}
 
+variable "security_group_id" {
+  description = "Security Group ID for EC2 instance"
+  type        = string
+}
 
-key_name = "my-ec2-key"
-bucket_name = "vamsi-devops-demo-2025-11-11"
-aws_region = "ap-south-1"
+variable "instance_name" {
+  description = "Name tag for EC2 instance"
+  type        = string
+}
 
+variable "environment" {
+  description = "Environment tag"
+  type        = string
+}
 
----
+tf.vars:-
 
-main.tf
+aws_region        = "us-east-1"
+ami_id            = "ami-0c55b159cbfafe1f0"   # Example Amazon Linux 2 AMI
+instance_type     = "t2.micro"
+key_name          = "my-key-pair"
+subnet_id         = "subnet-1234567890abcdef"
+security_group_id = "sg-1234567890abcdef"
+instance_name     = "my-ec2-instance"
+environment       = "dev"
 
-# --- Networking: VPC, subnet, IGW, route table
+terraform init
+terraform plan -var-file="terraform.tfvars"
+terraform apply --auto-approve -var-file="terraform.tfvars"
+
+✅ This setup includes:
+
+EC2 instance creation
+Variables for AMI, instance type, key pair, subnet, security group
+Tags for Name and Environment.
+
+--------------------------------------------------------------------------------------------------------------------
+complete Terraform setup for creating an AWS VPC with all variables defined in a separate file:-
+Main.tf:-
+provider "aws" {
+  region = var.aws_region
+}
+
 resource "aws_vpc" "main" {
-  cidr_block = var.vpc_cidr
-  tags = { Name = "devops-demo-vpc" }
+  cidr_block           = var.vpc_cidr
+  enable_dns_support   = var.enable_dns_support
+  enable_dns_hostnames = var.enable_dns_hostnames
+  tags = {
+    Name        = var.vpc_name
+    Environment = var.environment
+  }
 }
 
-resource "aws_subnet" "public" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.public_subnet_cidr
+resource "aws_subnet" "public_subnet" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.public_subnet_cidr
+  availability_zone       = var.availability_zone
   map_public_ip_on_launch = true
-  tags = { Name = "devops-demo-public-subnet" }
+  tags = {
+    Name = "${var.vpc_name}-public-subnet"
+  }
 }
 
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
-  tags = { Name = "devops-demo-igw" }
+  tags = {
+    Name = "${var.vpc_name}-igw"
+  }
 }
 
-resource "aws_route_table" "public" {
+resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.main.id
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-  tags = { Name = "devops-demo-public-rt" }
-}
-
-resource "aws_route_table_association" "a" {
-  subnet_id      = aws_subnet.public.id
-  route_table_id = aws_route_table.public.id
-}
-
-# --- Security groups
-resource "aws_security_group" "bastion_sg" {
-  name   = "devops-bastion-sg"
-  vpc_id = aws_vpc.main.id
-
-  ingress {
-    description = "SSH from my IP"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # for learning only; restrict to your IP in real env
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = { Name = "bastion-sg" }
-}
-
-resource "aws_security_group" "app_sg" {
-  name   = "devops-app-sg"
-  vpc_id = aws_vpc.main.id
-
-  ingress {
-    description = "HTTP from ALB"
-    from_port   = var.app_port
-    to_port     = var.app_port
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "SSH (optional)"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = { Name = "app-sg" }
-}
-
-resource "aws_security_group" "db_sg" {
-  name   = "devops-db-sg"
-  vpc_id = aws_vpc.main.id
-
-  ingress {
-    description = "MySQL from app"
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    security_groups = [aws_security_group.app_sg.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = { Name = "db-sg" }
-}
-
-# --- IAM role for EC2 to access ECR/S3/CloudWatch (basic)
-data "aws_iam_policy_document" "ec2_assume_role" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
+  tags = {
+    Name = "${var.vpc_name}-public-rt"
   }
 }
 
-resource "aws_iam_role" "ec2_role" {
-  name               = "devops-demo-ec2-role"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+resource "aws_route" "public_route" {
+  route_table_id         = aws_route_table.public_rt.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.igw.id
 }
 
-resource "aws_iam_role_policy_attachment" "ec2_ecr" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
+resource "aws_route_table_association" "public_assoc" {
+  subnet_id      = aws_subnet.public_subnet.id
+  route_table_id = aws_route_table.public_rt.id
 }
 
-resource "aws_iam_role_policy_attachment" "ec2_s3" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+Variables.tf:-
+
+variable "aws_region" {
+  description = "AWS region for VPC"
+  type        = string
 }
 
-resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "devops-demo-ec2-profile"
-  role = aws_iam_role.ec2_role.name
+variable "vpc_cidr" {
+  description = "CIDR block for VPC"
+  type        = string
 }
 
-# --- ECR repository
-resource "aws_ecr_repository" "app" {
-  name = "devops-demo-app"
-  image_tag_mutability = "MUTABLE"
-  tags = { Name = "devops-demo-ecr" }
+variable "vpc_name" {
+  description = "Name of the VPC"
+  type        = string
 }
 
-# --- S3 bucket (optional: make unique with timestamp if default not set)
-resource "aws_s3_bucket" "artifacts" {
-  bucket = length(var.bucket_name) > 0 ? var.bucket_name : "${replace(lower("devops-demo-${random_id.bucket_id.hex}"), "/[^a-z0-9-]/", "-")}"
-  acl    = "private"
-  versioning {
-  enabled = true
+variable "environment" {
+  description = "Environment tag"
+  type        = string
 }
 
-server_side_encryption_configuration {
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-  tags = { Name = "devops-demo-artifacts" }
+variable "enable_dns_support" {
+  description = "Enable DNS support in VPC"
+  type        = bool
+  default     = true
 }
 
-resource "random_id" "bucket_id" {
-  byte_length = 4
+variable "enable_dns_hostnames" {
+  description = "Enable DNS hostnames in VPC"
+  type        = bool
+  default     = true
 }
 
-# --- RDS (MySQL) minimal dev DB (not for prod)
-resource "aws_db_subnet_group" "default" {
-  name       = "devops-demo-db-subnet"
-  subnet_ids = [aws_subnet.public.id]
-  tags = { Name = "devops-db-subnet" }
+variable "public_subnet_cidr" {
+  description = "CIDR block for public subnet"
+  type        = string
 }
 
-resource "aws_db_instance" "mysql" {
-  allocated_storage    = 20
-  engine               = "mysql"
-  engine_version       = "8.0"
-  instance_class       = "db.t3.micro"
-  name                 = "devopsdb"
-  username             = var.db_username
-  password             = var.db_password
-  skip_final_snapshot  = true
-  publicly_accessible  = true
-  vpc_security_group_ids = [aws_security_group.db_sg.id]
-  db_subnet_group_name = aws_db_subnet_group.default.name
-  tags = { Name = "devops-demo-mysql" }
+variable "availability_zone" {
+  description = "Availability zone for subnet"
+  type        = string
+
+.tfvars:-
+
+aws_region          = "us-east-1"
+vpc_cidr            = "10.0.0.0/16"
+vpc_name            = "my-vpc"
+environment         = "dev"
+enable_dns_support  = true
+enable_dns_hostnames = true
+public_subnet_cidr  = "10.0.1.0/24"
+availability_zone   = "us-east-1a"
+
+✅ This setup includes:
+VPC
+Public Subnet
+Internet Gateway
+Route Table & Association
+Variables for flexibility
+
+---------------------------------------------------------------------------------------------------------------------------
+
+Here are two separate Terraform configurations for Elastic Load Balancing (ELB) and AWS Auto Scaling:-
+
+provider "aws" {
+  region = var.aws_region
 }
 
-# --- EC2 instance for app (user_data will install docker and run nginx demo)
-data "aws_ami" "amazon_linux" {
-  most_recent = true
-  owners      = ["137112412989"] # Amazon Linux 2 AMI owner id (may vary by region)
-  filter {
-    name = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-  }
-}
-
-resource "aws_instance" "app" {
-  ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
-  key_name               = var.key_name
-  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
-
-  user_data = <<-EOF
-              #!/bin/bash
-              yum update -y
-              amazon-linux-extras install docker -y || yum install -y docker
-              service docker start
-              usermod -a -G docker ec2-user
-              docker run -d -p ${var.app_port}:80 --name devops-nginx nginx:latest
-              EOF
-
-  tags = { Name = "devops-demo-app-instance" }
-}
-
-# --- ALB to expose the app
-resource "aws_lb" "alb" {
-  name               = "devops-demo-alb"
+resource "aws_lb" "app_lb" {
+  name               = var.lb_name
   internal           = false
   load_balancer_type = "application"
-  subnets            = [aws_subnet.public.id]
-  security_groups    = [aws_security_group.app_sg.id]
-  tags = { Name = "devops-demo-alb" }
+  security_groups    = [var.security_group_id]
+  subnets            = var.subnet_ids
+
+  tags = {
+    Name        = var.lb_name
+    Environment = var.environment
+  }
 }
 
 resource "aws_lb_target_group" "tg" {
-  name     = "devops-demo-tg"
-  port     = var.app_port
+  name     = var.target_group_name
+  port     = 80
   protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-  health_check {
-    path                = "/"
-    interval            = 30
-    unhealthy_threshold = 2
-    healthy_threshold   = 2
-    matcher             = "200-399"
-  }
-}
-
-resource "aws_lb_target_group_attachment" "att" {
-  target_group_arn = aws_lb_target_group.tg.arn
-  target_id        = aws_instance.app.id
-  port             = var.app_port
+  vpc_id   = var.vpc_id
 }
 
 resource "aws_lb_listener" "listener" {
-  load_balancer_arn = aws_lb.alb.arn
+  load_balancer_arn = aws_lb.app_lb.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
-    type = "forward"
+    type             = "forward"
     target_group_arn = aws_lb_target_group.tg.arn
   }
 }
 
+Variables:-
 
----
+variable "aws_region" { type = string }
+variable "lb_name" { type = string }
+variable "security_group_id" { type = string }
+variable "subnet_ids" { type = list(string) }
+variable "target_group_name" { type = string }
+variable "vpc_id" { type = string }
+variable "environment" { type = string }
 
-outputs.tf
+.tfvars:-
 
-output "ec2_public_ip" {
-  value = aws_instance.app.public_ip
+aws_region        = "us-east-1"
+lb_name           = "my-app-lb"
+security_group_id = "sg-1234567890abcdef"
+subnet_ids        = ["subnet-abc123", "subnet-def456"]
+target_group_name = "my-target-group"
+vpc_id            = "vpc-1234567890abcdef"
+environment       = "dev"
+
+main.tf for ASG:-
+
+provider "aws" {
+  region = var.aws_region
 }
 
-output "alb_dns" {
-  value = aws_lb.alb.dns_name
+resource "aws_launch_template" "lt" {
+  name_prefix   = var.launch_template_name
+  image_id      = var.ami_id
+  instance_type = var.instance_type
+  key_name      = var.key_name
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [var.security_group_id]
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name        = var.instance_name
+      Environment = var.environment
+    }
+  }
 }
 
-output "s3_bucket" {
-  value = aws_s3_bucket.artifacts.bucket
+resource "aws_autoscaling_group" "asg" {
+  name                      = var.asg_name
+  desired_capacity          = var.desired_capacity
+  max_size                  = var.max_size
+  min_size                  = var.min_size
+  vpc_zone_identifier       = var.subnet_ids
+  launch_template {
+    id      = aws_launch_template.lt.id
+    version = "$Latest"
+  }
+  target_group_arns = [var.target_group_arn]
+  health_check_type = "EC2"
 }
 
-output "rds_endpoint" {
-  value = aws_db_instance.mysql.endpoint
+Variables:-
+
+variable "aws_region" { type = string }
+variable "launch_template_name" { type = string }
+variable "ami_id" { type = string }
+variable "instance_type" { type = string }
+variable "key_name" { type = string }
+variable "security_group_id" { type = string }
+variable "instance_name" { type = string }
+variable "environment" { type = string }
+variable "asg_name" { type = string }
+variable "desired_capacity" { type = number }
+variable "max_size" { type = number }
+variable "min_size" { type = number }
+variable "subnet_ids" { type = list(string) }
+variable "target_group_arn" { type = string }
+
+.tfvars:-
+
+aws_region            = "us-east-1"
+launch_template_name  = "my-launch-template"
+ami_id                = "ami-0c55b159cbfafe1f0"
+instance_type         = "t2.micro"
+key_name              = "my-key-pair"
+security_group_id     = "sg-1234567890abcdef"
+instance_name         = "auto-instance"
+environment           = "dev"
+asg_name              = "my-auto-scaling-group"
+desired_capacity      = 2
+max_size              = 4
+min_size              = 1
+subnet_ids            = ["subnet-abc123", "subnet-def456"]
+target_group_arn      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/my-target-group/abcdef123456"
+
+✅ This setup:
+
+Creates an Application Load Balancer with a listener and target group.
+Creates an Auto Scaling Group linked to the target group for dynamic scaling.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+Here’s a Terraform configuration for creating an EBS volume and attaching it to an EC2 instance, with all variables defined:-
+
+provider "aws" {
+  region = var.aws_region
 }
 
-output "ecr_repository_url" {
-  value = aws_ecr_repository.app.repository_url
+# Create EBS Volume
+resource "aws_ebs_volume" "ebs" {
+  availability_zone = var.availability_zone
+  size              = var.volume_size
+  type              = var.volume_type
+  tags = {
+    Name        = var.volume_name
+    Environment = var.environment
+  }
+}
+
+# Attach EBS Volume to EC2 Instance
+resource "aws_volume_attachment" "ebs_attach" {
+  device_name = var.device_name
+  volume_id   = aws_ebs_volume.ebs.id
+  instance_id = var.instance_id
+}
+
+Variables.tf:-
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "availability_zone" {
+  description = "Availability zone for EBS volume"
+  type        = string
+}
+
+variable "volume_size" {
+  description = "Size of EBS volume in GB"
+  type        = number
+}
+
+variable "volume_type" {
+  description = "Type of EBS volume (gp2, gp3, io1, etc.)"
+  type        = string
+  default     = "gp2"
+}
+
+variable "volume_name" {
+  description = "Name tag for EBS volume"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment tag"
+  type        = string
+}
+
+variable "device_name" {
+  description = "Device name for attachment (e.g., /dev/sdf)"
+  type        = string
+}
+
+variable "instance_id" {
+  description = "EC2 instance ID to attach the volume"
+  type        = string
+}
+
+.tfvars:-
+
+aws_region        = "us-east-1"
+availability_zone = "us-east-1a"
+volume_size       = 20
+volume_type       = "gp3"
+volume_name       = "my-ebs-volume"
+environment       = "dev"
+device_name       = "/dev/sdf"
+instance_id       = "i-0123456789abcdef0"
+
+✅ This setup:
+
+Creates an EBS volume in a specific AZ.
+Attaches it to an existing EC2 instance.
+Uses variables for flexibility.
+
+--------------------------------------------------------------------------------------------------------------------------
+complete Terraform setup for creating an AWS VPC with all variables defined in a separate file:
+Main.tf:-
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_s3_bucket" "this" {
+  bucket        = var.bucket_name
+  acl           = var.bucket_acl
+
+  tags = {
+    Name        = var.bucket_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_s3_bucket_versioning" "versioning" {
+  bucket = aws_s3_bucket.this.id
+
+  versioning_configuration {
+    status = var.versioning_status
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "encryption" {
+  bucket = aws_s3_bucket.this.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = var.sse_algorithm
+    }
+  }
 }
 
 
----
+Variables.tf:-
+variable "aws_region" {
+  description = "AWS region where the bucket will be created"
+  type        = string
+}
 
-How to run (safe steps)
+variable "bucket_name" {
+  description = "Name of the S3 bucket"
+  type        = string
+}
 
-1. cd devops-demo
+variable "bucket_acl" {
+  description = "Access control list for the bucket"
+  type        = string
+  default     = "private"
+}
 
+variable "environment" {
+  description = "Environment tag for the bucket"
+  type        = string
+}
 
-2. Create terraform.tfvars with values:
+variable "versioning_status" {
+  description = "Enable or disable versioning"
+  type        = string
+  default     = "Enabled"
+}
 
-
-
-key_name = "your-existing-keypair"
-bucket_name = "your-unique-bucket-name-2025-11-11"
-aws_region = "ap-south-1"
-
-3. terraform init
-
-
-4. terraform plan — inspect carefully what will be created and costs
-
-
-5. terraform apply — confirm with yes
-
-
-6. When finished testing: terraform destroy
-
-
-
-
----
-
-Explanations & learning points
-
-Why IAM Role & Instance Profile? so the EC2 can pull/push to ECR and access S3 without embedding credentials.
-
-ECR created so later you can docker push your app image there. Right now user-data runs nginx from Docker Hub for simplicity.
-
-RDS shows how to provision DB; publicly_accessible = true is set for learning only — in prod you'd use private DB and subnets.
-
-ALB sits in front of the EC2 and routes HTTP traffic to the container port.
-
-S3 demonstrates storing artifacts/logs/backups.
+variable "sse_algorithm" {
+  description = "Server-side encryption algorithm"
+  type        = string
+  default     = "AES256"
+}
 
 
-
----
-
-Safety & cleanup
-
-This project creates RDS and ALB which can incur costs. Use terraform destroy when done.
-
-Consider using count or skip variables to turn off expensive resources when you test quickly (I can show how).
-
+TF.vars:-
+aws_region        = "us-east-1"
+bucket_name       = "my-unique-s3-bucket-name"
+bucket_acl        = "private"
+environment       = "dev"
+versioning_status = "Enabled"
+sse_algorithm     = "AES256"
 
 
----
+✅ This setup includes:
+Provider configuration
+S3 bucket creation
+Versioning
+Encryption
+Tags
+Variables with defaults and descriptions
+---------------------------------------------------------------------------------------------------------------------------
 
-If you want, I can:
+complete Terraform configuration for creating an IAM user, group, and policy with all variables defined in a separate file:-
 
-Produce a smaller zero-cost variant (only VPC + EC2 + S3) for initial practice, or
+main.tf:-
 
-Add EKS + node group later (that’s more complex), or
+provider "aws" {
+  region = var.aws_region
+}
 
-Show how to add userdata to pull from ECR (once you push an image), or
+# Create IAM User
+resource "aws_iam_user" "user" {
+  name = var.iam_user_name
+  tags = {
+    Environment = var.environment
+  }
+}
 
-Add a null_resource to run docker build and push to ECR via Terraform external/local-exec (demo).
+# Create IAM Group
+resource "aws_iam_group" "group" {
+  name = var.iam_group_name
+}
+
+# Attach User to Group
+resource "aws_iam_group_membership" "group_membership" {
+  name  = "${var.iam_group_name}-membership"
+  users = [aws_iam_user.user.name]
+  group = aws_iam_group.group.name
+}
+
+# Create IAM Policy
+resource "aws_iam_policy" "policy" {
+  name        = var.iam_policy_name
+  description = "Custom IAM policy for S3 access"
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = ["s3:ListBucket", "s3:GetObject"]
+        Effect   = "Allow"
+        Resource = [
+          "arn:aws:s3:::${var.s3_bucket_name}",
+          "arn:aws:s3:::${var.s3_bucket_name}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Attach Policy to Group
+resource "aws_iam_policy_attachment" "policy_attach" {
+  name       = "${var.iam_group_name}-policy-attach"
+  policy_arn = aws_iam_policy.policy.arn
+  groups     = [aws_iam_group.group.name]
+}
+
+Variables.tf:-
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "iam_user_name" {
+  description = "IAM user name"
+  type        = string
+}
+
+variable "iam_group_name" {
+  description = "IAM group name"
+  type        = string
+}
+
+variable "iam_policy_name" {
+  description = "IAM policy name"
+  type        = string
+}
+
+variable "s3_bucket_name" {
+  description = "S3 bucket name for policy"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment tag"
+  type        = string
+}
+
+.tfvars:-
+
+aws_region       = "us-east-1"
+iam_user_name    = "my-iam-user"
+iam_group_name   = "my-iam-group"
+iam_policy_name  = "my-iam-policy"
+s3_bucket_name   = "my-unique-s3-bucket"
+environment      = "dev"
+
+terraform init
+terraform plan -var-file="terraform.tfvars"
+terraform apply --auto-approve -var-file="terraform.tfvars"
+
+✅ This setup includes:
+
+IAM User
+IAM Group
+Custom IAM Policy for S3 access
+Attach policy to group and add user to group
+Variables for flexibility
+
+--------------------------------------------------------------------------------------------------------------------------
+
+Here’s a complete Terraform configuration for creating an RDS instance with all variables defined:-
+
+Main.tf:-
+
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_db_instance" "rds" {
+  allocated_storage    = var.allocated_storage
+  engine               = var.engine
+  engine_version       = var.engine_version
+  instance_class       = var.instance_class
+  identifier           = var.db_identifier
+  username             = var.db_username
+  password             = var.db_password
+  db_name              = var.db_name
+  parameter_group_name = var.parameter_group_name
+  skip_final_snapshot  = true
+
+  vpc_security_group_ids = [var.security_group_id]
+  publicly_accessible    = var.publicly_accessible
+  storage_type           = var.storage_type
+  multi_az               = var.multi_az
+  tags = {
+    Name        = var.db_identifier
+    Environment = var.environment
+  }
+}
+
+Variables.tf:-
+
+variable "aws_region" { type = string }
+variable "allocated_storage" { type = number }
+variable "engine" { type = string }
+variable "engine_version" { type = string }
+variable "instance_class" { type = string }
+variable "db_identifier" { type = string }
+variable "db_username" { type = string }
+variable "db_password" { type = string sensitive = true }
+variable "db_name" { type = string }
+variable "parameter_group_name" { type = string }
+variable "security_group_id" { type = string }
+variable "publicly_accessible" { type = bool }
+variable "storage_type" { type = string }
+variable "multi_az" { type = bool }
+variable "environment" { type = string }
+
+.tsvars:-
+
+aws_region           = "us-east-1"
+allocated_storage    = 20
+engine               = "mysql"
+engine_version       = "8.0"
+instance_class       = "db.t3.micro"
+db_identifier        = "my-rds-instance"
+db_username          = "admin"
+db_password          = "StrongPassword123!"
+db_name              = "mydatabase"
+parameter_group_name = "default.mysql8.0"
+security_group_id    = "sg-1234567890abcdef"
+publicly_accessible  = true
+storage_type         = "gp2"
+multi_az             = false
+environment          = "dev"
+
+terraform init
+terraform plan -var-file="terraform.tfvars"
+terraform apply --auto-approve -var-file="terraform.tfvars"
+
+✅ This setup includes:
+
+RDS instance creation
+Engine (MySQL, PostgreSQL, etc.)
+Custom username/password
+Security group
+Multi-AZ option
+Tags for environment
+
+-------------------------------------------------------------------------------------------------------------------------
+
+Here’s a complete Terraform configuration for creating an EKS (Elastic Kubernetes Service) cluster with all variables defined:
+
+Main.tf:-
+
+provider "aws" {
+  region = var.aws_region
+}
+
+# Create EKS Cluster
+resource "aws_eks_cluster" "eks" {
+  name     = var.cluster_name
+  role_arn = aws_iam_role.eks_role.arn
+
+  vpc_config {
+    subnet_ids = var.subnet_ids
+  }
+
+  tags = {
+    Name        = var.cluster_name
+    Environment = var.environment
+  }
+}
+
+# IAM Role for EKS Cluster
+resource "aws_iam_role" "eks_role" {
+  name = "${var.cluster_name}-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Attach EKS Policies to Role
+resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  role       = aws_iam_role.eks_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_service_policy" {
+  role       = aws_iam_role.eks_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+}
+
+Variables:-
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+}
+
+variable "subnet_ids" {
+  description = "List of subnet IDs for EKS cluster"
+  type        = list(string)
+}
+
+variable "environment" {
+  description = "Environment tag"
+  type        = string
+}
+
+.tfvars:-
+
+aws_region    = "us-east-1"
+cluster_name  = "my-eks-cluster"
+subnet_ids    = ["subnet-abc123", "subnet-def456"]
+environment   = "dev"
+
+✅ This setup:
+
+Creates an EKS cluster
+Configures IAM role and policies for EKS
+Uses subnets for networking
+
+------------------------------------------------------------------------------------------------------------------------
+
+Here’s a Terraform configuration for creating an AWS Lambda function with all variables defined:
+
+Main.tf :-
+
+provider "aws" {
+  region = var.aws_region
+}
+
+# IAM Role for Lambda
+resource "aws_iam_role" "lambda_role" {
+  name = "${var.lambda_name}-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Attach AWSLambdaBasicExecutionRole policy
+resource "aws_iam_role_policy_attachment" "lambda_basic_policy" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Lambda Function
+resource "aws_lambda_function" "lambda" {
+  function_name = var.lambda_name
+  role          = aws_iam_role.lambda_role.arn
+  handler       = var.handler
+  runtime       = var.runtime
+  filename      = var.source_file
+
+  source_code_hash = filebase64sha256(var.source_file)
+
+  tags = {
+    Name        = var.lambda_name
+    Environment = var.environment
+  }
+}
+
+Variables:-
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "lambda_name" {
+  description = "Name of the Lambda function"
+  type        = string
+}
+
+variable "handler" {
+  description = "Handler for Lambda function"
+  type        = string
+}
+
+variable "runtime" {
+  description = "Runtime for Lambda function (e.g., python3.9)"
+  type        = string
+}
+
+variable "source_file" {
+  description = "Path to the deployment package (.zip)"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment tag"
+  type        = string
 
 
-Which next step would you like?
+.tfvars:-
+
+aws_region    = "us-east-1"
+lambda_name   = "my-lambda-function"
+handler       = "lambda_function.lambda_handler"
+runtime       = "python3.9"
+source_file   = "lambda.zip"   # Make sure this zip file exists in your directory
+environment   = "dev"
+
+✅ This setup:
+
+Creates an IAM role for Lambda with basic execution permissions.
+Deploys a Lambda function using a ZIP file.
+Uses variables for flexibility.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+To create a Docker registry on AWS, the most common approach is to use Amazon Elastic Container Registry (ECR). Here’s a Terraform configuration for creating an ECR repository:
+
+Main.tf :-
+
+provider "aws" {
+  region = var.aws_region
+}
+
+# Create ECR Repository
+resource "aws_ecr_repository" "docker_registry" {
+  name                 = var.repository_name
+  image_tag_mutability = var.image_tag_mutability
+  image_scanning_configuration {
+    scan_on_push = var.scan_on_push
+  }
+
+  tags = {
+    Name        = var.repository_name
+    Environment = var.environment
+  }
+}
+
+Variables:=
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "repository_name" {
+  description = "Name of the ECR repository"
+  type        = string
+}
+
+variable "image_tag_mutability" {
+  description = "Tag mutability (MUTABLE or IMMUTABLE)"
+  type        = string
+  default     = "MUTABLE"
+}
+
+variable "scan_on_push" {
+  description = "Enable image scan on push"
+  type        = bool
+  default     = true
+}
+
+variable "environment" {
+  description = "Environment tag"
+  type        = string
+}
+
+
+.tfvars:-
+
+aws_region          = "us-east-1"
+repository_name     = "my-docker-registry"
+image_tag_mutability = "MUTABLE"
+scan_on_push        = true
+environment         = "dev"
+
+✅ This setup:
+
+Creates an ECR repository for storing Docker images.
+Enables image scanning on push for security.
+Allows mutable tags (you can change image tags later).
+
+---------------------------------------------------------------------------------------------------------------------------
+
+Here’s the combined Terraform configuration for Route 53 (R53) —
+
+########################################
+# Route 53 - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+# Create Hosted Zone
+resource "aws_route53_zone" "hosted_zone" {
+  name = var.domain_name
+  tags = {
+    Environment = var.environment
+  }
+}
+
+# Create DNS Record
+resource "aws_route53_record" "dns_record" {
+  zone_id = aws_route53_zone.hosted_zone.zone_id
+  name    = var.record_name
+  type    = var.record_type
+  ttl     = var.ttl
+  records = [var.record_value]
+}
+
+########################################
+# Route 53 - variables.tf
+########################################
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "domain_name" {
+  description = "Domain name for hosted zone"
+  type        = string
+}
+
+variable "record_name" {
+  description = "DNS record name"
+  type        = string
+}
+
+variable "record_type" {
+  description = "DNS record type (A, CNAME, etc.)"
+  type        = string
+}
+
+variable "ttl" {
+  description = "Time to live for DNS record"
+  type        = number
+}
+
+variable "record_value" {
+  description = "Value for DNS record (IP or hostname)"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment tag"
+  type        = string
+}
+
+########################################
+# Route 53 - terraform.tfvars
+########################################
+aws_region    = "us-east-1"
+domain_name   = "example.com"
+record_name   = "app.example.com"
+record_type   = "A"
+ttl           = 300
+record_value  = "192.0.2.44"
+environment   = "dev"
+
+------------------------------------------------------------------------------------------------------------------------
+########################################
+# EFS - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_efs_file_system" "efs" {
+  creation_token    = var.efs_name
+  performance_mode  = var.performance_mode
+  encrypted         = true
+
+  tags = {
+    Name        = var.efs_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_efs_mount_target" "efs_mount" {
+  file_system_id  = aws_efs_file_system.efs.id
+  subnet_id       = var.subnet_id
+  security_groups = [var.security_group_id]
+}
+
+########################################
+# EFS - variables.tf
+########################################
+variable "aws_region" { type = string }
+variable "efs_name" { type = string }
+variable "performance_mode" { type = string default = "generalPurpose" }
+variable "subnet_id" { type = string }
+variable "security_group_id" { type = string }
+variable "environment" { type = string }
+
+########################################
+# EFS - terraform.tfvars
+########################################
+aws_region        = "us-east-1"
+efs_name          = "my-efs"
+performance_mode  = "generalPurpose"
+subnet_id         = "subnet-abc123"
+security_group_id = "sg-1234567890abcdef"
+environment       = "dev"
+
+--------------------------------------------------------------------------------------------------------------------
+
+########################################
+# ECS - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_ecs_cluster" "ecs" {
+  name = var.ecs_cluster_name
+  tags = {
+    Environment = var.environment
+  }
+}
+
+########################################
+# ECS - variables.tf
+########################################
+variable "aws_region" { type = string }
+variable "ecs_cluster_name" { type = string }
+variable "environment" { type = string }
+
+########################################
+# ECS - terraform.tfvars
+########################################
+aws_region        = "us-east-1"
+ecs_cluster_name  = "my-ecs-cluster"
+environment       = "dev"
+
+--------------------------------------------------------------------------------------------------------------------
+
+########################################
+# SNS - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_sns_topic" "sns" {
+  name = var.sns_topic_name
+}
+
+resource "aws_sns_topic_subscription" "sns_sub" {
+  topic_arn = aws_sns_topic.sns.arn
+  protocol  = var.protocol
+  endpoint  = var.endpoint
+}
+
+########################################
+# SNS - variables.tf
+########################################
+variable "aws_region" { type = string }
+variable "sns_topic_name" { type = string }
+variable "protocol" { type = string } # e.g., "email"
+variable "endpoint" { type = string } # e.g., "example@example.com"
+
+########################################
+# SNS - terraform.tfvars
+########################################
+aws_region      = "us-east-1"
+sns_topic_name  = "my-sns-topic"
+protocol        = "email"
+endpoint        = "example@example.com"
+
+--------------------------------------------------------------------------------------------------------------------
+
+########################################
+# CodeBuild - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_codebuild_project" "codebuild" {
+  name         = var.codebuild_name
+  service_role = var.service_role
+
+  source {
+    type     = "GITHUB"
+    location = var.source_repo
+  }
+
+  environment {
+    compute_type = "BUILD_GENERAL1_SMALL"
+    image        = "aws/codebuild/standard:5.0"
+    type         = "LINUX_CONTAINER"
+  }
+
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+}
+
+########################################
+# CodeBuild - variables.tf
+########################################
+variable "aws_region" { type = string }
+variable "codebuild_name" { type = string }
+variable "service_role" { type = string }
+variable "source_repo" { type = string }
+
+########################################
+# CodeBuild - terraform.tfvars
+########################################
+aws_region      = "us-east-1"
+codebuild_name  = "my-codebuild-project"
+service_role    = "arn:aws:iam::123456789012:role/CodeBuildServiceRole"
+source_repo     = "https://github.com/myrepo.git"
+
+--------------------------------------------------------------------------------------------------------------------
+
+########################################
+# CodeDeploy - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_codedeploy_app" "app" {
+  name             = var.codedeploy_app_name
+  compute_platform = "Server"
+}
+
+resource "aws_codedeploy_deployment_group" "dg" {
+  app_name              = aws_codedeploy_app.app.name
+  deployment_group_name = var.deployment_group_name
+  service_role_arn      = var.service_role
+}
+
+########################################
+# CodeDeploy - variables.tf
+########################################
+variable "aws_region" { type = string }
+variable "codedeploy_app_name" { type = string }
+variable "deployment_group_name" { type = string }
+variable "service_role" { type = string }
+
+########################################
+# CodeDeploy - terraform.tfvars
+########################################
+aws_region             = "us-east-1"
+codedeploy_app_name    = "my-codedeploy-app"
+deployment_group_name  = "my-deployment-group"
+service_role           = "arn:aws:iam::123456789012:role/CodeDeployServiceRole"
+
+--------------------------------------------------------------------------------------------------------------------
+
+########################################
+# CodePipeline - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_codepipeline" "pipeline" {
+  name     = var.pipeline_name
+  role_arn = var.service_role
+
+  artifact_store {
+    type     = "S3"
+    location = var.artifact_bucket
+  }
+
+  stage {
+    name = "Source"
+    action {
+      name             = "SourceAction"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeCommit"
+      version          = "1"
+      output_artifacts = ["source_output"]
+      configuration = {
+        RepositoryName = var.source_repo
+        BranchName     = var.branch_name
+      }
+    }
+  }
+}
+
+########################################
+# CodePipeline - variables.tf
+########################################
+variable "aws_region" { type = string }
+variable "pipeline_name" { type = string }
+variable "service_role" { type = string }
+variable "artifact_bucket" { type = string }
+variable "source_repo" { type = string }
+variable "branch_name" { type = string }
+
+########################################
+# CodePipeline - terraform.tfvars
+########################################
+aws_region       = "us-east-1"
+pipeline_name    = "my-pipeline"
+service_role     = "arn:aws:iam::123456789012:role/CodePipelineServiceRole"
+artifact_bucket  = "my-artifact-bucket"
+source_repo      = "my-codecommit-repo"
+branch_name      = "main"
+
+--------------------------------------------------------------------------------------------------------------------
+
+########################################
+# CloudWatch - main.tf
+########################################
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_cloudwatch_log_group" "log_group" {
+  name              = var.log_group_name
+  retention_in_days = var.retention_days
+}
+
+########################################
+# CloudWatch - variables.tf
+########################################
+variable "aws_region" { type = string }
+variable "log_group_name" { type = string }
+variable "retention_days" { type = number default = 7 }
+
+########################################
+# CloudWatch - terraform.tfvars
+########################################
+aws_region       = "us-east-1"
+log_group_name   = "/aws/my-app/logs"
+retention_days   = 14
+
+--------------------------------------------------------------------------------------------------------------------
+
