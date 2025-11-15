@@ -418,7 +418,7 @@ Attaches it to an existing EC2 instance.
 Uses variables for flexibility.
 
 --------------------------------------------------------------------------------------------------------------------------
-complete Terraform setup for creating an AWS VPC with all variables defined in a separate file:
+complete Terraform setup for creating an AWS S3 bucket with all variables defined in a separate file:
 Main.tf:-
 provider "aws" {
   region = var.aws_region
